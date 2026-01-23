@@ -4,7 +4,7 @@
   <name>ddsm115_ros2_driver</name>
   <version>0.1.0</version>
   <description>ROS2 driver package for DDSM115 servo motor controller</description>
-  <maintainer email="maintainer@rodep-soft.com">rodep-soft</maintainer>
+  <maintainer email="ykturtler@outlook.com">rodep-soft</maintainer>
   <license>MIT</license>
 
   <buildtool_depend>ament_cmake</buildtool_depend>

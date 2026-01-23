@@ -2,5 +2,4 @@ ddsm115_node:
   ros__parameters:
     serial_port: "/dev/ttyUSB0"
     baud_rate: 115200
-    motor_id: 1
     publish_rate: 10.0

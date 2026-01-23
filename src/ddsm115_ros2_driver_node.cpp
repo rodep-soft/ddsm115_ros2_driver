@@ -8,22 +8,20 @@
 
 using namespace std::chrono_literals;
 
-class DDSM115Node : public rclcpp::Node
+class DDSM115DriverNode : public rclcpp::Node
 {
 public:
-  DDSM115Node()
-  : Node("ddsm115_node")
+  DDSM115DriverNode()
+  : Node("ddsm115driver_node")
   {
     // Declare parameters
     this->declare_parameter<std::string>("serial_port", "/dev/ttyUSB0");
     this->declare_parameter<int>("baud_rate", 115200);
-    this->declare_parameter<int>("motor_id", 1);
     this->declare_parameter<double>("publish_rate", 10.0);
 
     // Get parameters
     serial_port_ = this->get_parameter("serial_port").as_string();
     baud_rate_ = this->get_parameter("baud_rate").as_int();
-    motor_id_ = this->get_parameter("motor_id").as_int();
     double publish_rate = this->get_parameter("publish_rate").as_double();
 
     // Create publishers
@@ -36,12 +34,11 @@ public:
     auto timer_period = std::chrono::duration<double>(1.0 / publish_rate);
     timer_ = this->create_wall_timer(
       timer_period,
-      std::bind(&DDSM115Node::timer_callback, this));
+      std::bind(&DDSM115DriverNode::timer_callback, this));
 
-    RCLCPP_INFO(this->get_logger(), "DDSM115 Node initialized");
+    RCLCPP_INFO(this->get_logger(), "DDSM115 Driver Node initialized");
     RCLCPP_INFO(this->get_logger(), "Serial port: %s", serial_port_.c_str());
     RCLCPP_INFO(this->get_logger(), "Baud rate: %d", baud_rate_);
-    RCLCPP_INFO(this->get_logger(), "Motor ID: %d", motor_id_);
   }
 
 private:
@@ -77,7 +74,7 @@ private:
 int main(int argc, char * argv[])
 {
   rclcpp::init(argc, argv);
-  rclcpp::spin(std::make_shared<DDSM115Node>());
+  rclcpp::spin(std::make_shared<DDSM115DriverNode>());
   rclcpp::shutdown();
   return 0;
 }

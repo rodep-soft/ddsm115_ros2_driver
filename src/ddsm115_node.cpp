@@ -51,14 +51,16 @@ private:
     auto joint_state_msg = sensor_msgs::msg::JointState();
     joint_state_msg.header.stamp = this->now();
     joint_state_msg.name.push_back("ddsm115_joint");
-    joint_state_msg.position.push_back(0.0);  // Placeholder
-    joint_state_msg.velocity.push_back(0.0);  // Placeholder
-    joint_state_msg.effort.push_back(0.0);    // Placeholder
+    // TODO: Replace with actual motor feedback data
+    joint_state_msg.position.push_back(0.0);  // TODO: Read position from motor encoder
+    joint_state_msg.velocity.push_back(0.0);  // TODO: Read velocity from motor feedback
+    joint_state_msg.effort.push_back(0.0);    // TODO: Calculate from motor current sensors
     
     joint_state_pub_->publish(joint_state_msg);
 
     // Publish status
     auto status_msg = std_msgs::msg::String();
+    // TODO: Implement actual status checking (connected/error/running/idle)
     status_msg.data = "DDSM115 motor running";
     status_pub_->publish(status_msg);
   }

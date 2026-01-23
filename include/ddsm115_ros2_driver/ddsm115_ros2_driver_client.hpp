@@ -16,12 +16,12 @@ public:
 
   bool init_port(const std::string &port_name, int baud_rate);
   bool reinitialize_port();
+  void close_port();
 
   // Motor control functions
   void send_velocity_command(uint8_t motor_id, int16_t rpm, bool brake = false);
 
   // Helper functions
-  void clear_serial_buffer();
   void start_async_read();
   void parse_buffer();
   void process_feedback_packet(const std::vector<uint8_t> &packet);
@@ -40,6 +40,8 @@ private:
   std::array<uint8_t, 64> read_buf_;
   std::atomic<bool> reading_;
   std::thread io_thread_;
+  std::mutex mutex_;
+  std::condition_variable cv_;
 
   std::chrono::steady_clock::time_point feedback_received_time_;
   std::atomic<uint8_t> last_motor_id_{0};

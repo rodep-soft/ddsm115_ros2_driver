@@ -5,6 +5,9 @@
 #include <thread>
 #include <mutex>
 #include <condition_variable>
+#include <future>
+
+namespace ddsm115_ros2_driver {
 
 uint8_t DDSM115DriverClient::calc_crc8_maxim(const std::vector<uint8_t>& data) {
   uint8_t crc = 0x00;  // 初期値  (一般的なMaxim CRCの標準)
@@ -98,13 +101,58 @@ bool DDSM115DriverClient::reinitialize_port() {
   return init_port(port_name_, baud_rate_);
 }
 
-void DDSM115DriverClient::send_velocity_command(uint8_t motor_id, int16_t rpm, bool brake) {
+void DDSM115DriverClient::send_mode_command(uint8_t motor_id, ControlLoopModes mode) {
+
+  std::vector<uint8_t> data;
+  data.reserve(10); 
+
+  data.push_back(motor_id);
+  data.push_back(0xA0);
+  data.push_back(0x00);
+  data.push_back(0x00);
+  data.push_back(0x00);
+  data.push_back(0x00);
+  data.push_back(0x00);
+  data.push_back(0x00);
+  data.push_back(0x00);
+  data.push_back(static_cast<uint8_t>(mode));
+  
+  try {
+    std::lock_guard<std::mutex> lock(send_mutex_);
+    boost::asio::write(serial_port_, boost::asio::buffer(data, data.size()));
+
+  } catch (const std::exception& e) {
+    RCLCPP_ERROR(logger_, "Communication error with motor %d: %s", motor_id, e.what());
+    reinitialize_port();
+  }
+}
+
+void DDSM115DriverClient::send_current_command(uint8_t motor_id, double current) {
   std::vector<uint8_t> data;
   data.reserve(10); 
 
   data.push_back(motor_id);
   data.push_back(0x64);
-  uint16_t val_u16 = std::bit_cast<uint16_t>(rpm);
+  uint16_t val_u16 = std::bit_cast<uint16_t>(static_cast<int16_t>(std::clamp(std::round(current * (32767.0 / 8.0)), -32767.0, 32767.0)));
+  data.push_back(static_cast<uint8_t>((val_u16 >> 8) & 0xFF));
+  data.push_back(static_cast<uint8_t>(val_u16 & 0xFF));
+  data.push_back(0x00);
+  data.push_back(0x00);
+  data.push_back(0x00);
+  data.push_back(0x00);
+  data.push_back(0x00);
+  data.push_back(calc_crc8_maxim(data));
+
+  send_rotate_command(data, motor_id);
+}
+
+void DDSM115DriverClient::send_velocity_command(uint8_t motor_id, double rpm, bool brake) {
+  std::vector<uint8_t> data;
+  data.reserve(10); 
+
+  data.push_back(motor_id);
+  data.push_back(0x64);
+  uint16_t val_u16 = std::bit_cast<uint16_t>(static_cast<int16_t>(std::clamp(std::round(rpm * (32767.0 / 330.0)), -32767.0, 32767.0)));
   data.push_back(static_cast<uint8_t>((val_u16 >> 8) & 0xFF));
   data.push_back(static_cast<uint8_t>(val_u16 & 0xFF));
   data.push_back(0x00);
@@ -114,11 +162,32 @@ void DDSM115DriverClient::send_velocity_command(uint8_t motor_id, int16_t rpm, b
   data.push_back(0x00);
   data.push_back(calc_crc8_maxim(data));
 
+  send_rotate_command(data, motor_id);
+}
+
+void DDSM115DriverClient::send_position_command(uint8_t motor_id, double position) {
+  std::vector<uint8_t> data;
+  data.reserve(10); 
+
+  data.push_back(motor_id);
+  data.push_back(0x64);
+  uint16_t val_u16 = std::bit_cast<uint16_t>(static_cast<int16_t>(std::clamp(std::round((position - 180.0) * (32767.0 / 180.0)), -32767.0, 32767.0)));
+  data.push_back(static_cast<uint8_t>((val_u16 >> 8) & 0xFF));
+  data.push_back(static_cast<uint8_t>(val_u16 & 0xFF));
+  data.push_back(0x00);
+  data.push_back(0x00);
+  data.push_back(0x00);
+  data.push_back(0x00);
+  data.push_back(0x00);
+  data.push_back(calc_crc8_maxim(data));
+
+  send_rotate_command(data, motor_id);
+}
+
+void DDSM115DriverClient::send_rotate_command(std::vector<uint8_t>& data, uint8_t motor_id) {
   try {
-    {
-      std::lock_guard<std::mutex> lock(mutex_);
-      last_motor_id_ = 0; 
-    }
+    std::lock_guard<std::mutex> lock(send_mutex_);
+    last_motor_id_ = 0; 
     // コマンド送信
     boost::asio::write(serial_port_, boost::asio::buffer(data, data.size()));
 
@@ -130,14 +199,12 @@ void DDSM115DriverClient::send_velocity_command(uint8_t motor_id, int16_t rpm, b
     reinitialize_port();
   }
 }
-
 void DDSM115DriverClient::start_async_read() {
   if (!reading_) return;
   serial_port_.async_read_some(
       boost::asio::buffer(read_buf_), [this](boost::system::error_code ec, std::size_t length) {
         if (!ec && length > 0) {
           {
-            std::lock_guard<std::mutex> lock(mutex_);
             buffer_.insert(buffer_.end(), read_buf_.begin(), read_buf_.begin() + length);
             parse_buffer(); // ロック内でパースする
           }
@@ -197,28 +264,32 @@ void DDSM115DriverClient::process_feedback_packet(const std::vector<uint8_t>& pa
 
   // フィードバック受信を記録
   feedback_received_time_ = std::chrono::steady_clock::now();
-  last_motor_id_ = motor_id;
 
-  cv_.notify_all(); 
+  std::unique_lock<std::mutex> lock(wait_mutex_);
+  last_motor_id_ = motor_id;
+  wait_cv_.notify_all();
+  lock.unlock();
+
   // コールバックが設定されていれば呼び出す
-  if(feedback_callback_) {
+  if (feedback_callback_) {
     feedback_callback_(packet);
   }
+  
 }
 
 void DDSM115DriverClient::wait_for_feedback_response(uint8_t motor_id, int timeout_ms) {
-  std::unique_lock<std::mutex> lock(mutex_); // Condition Variableには unique_lock が必要らしい
 
-  // 述語（Predicate）付き wait_for:
-  // 「タイムアウトした」 または 「last_motor_id_ が期待値になった」 まで待機する
-  bool received = cv_.wait_for(lock, std::chrono::milliseconds(timeout_ms), 
-    [this, motor_id] { 
-      return last_motor_id_ == motor_id; 
-    });
+  std::unique_lock<std::mutex> lock(wait_mutex_);
+  bool result = wait_cv_.wait_for(lock, std::chrono::milliseconds(timeout_ms), [this, motor_id]() {
+    return last_motor_id_ == motor_id;
+  });
+  lock.unlock();
 
-  if (received) {
+  if (result) {
     RCLCPP_DEBUG(logger_, "Motor %d feedback received.", motor_id);
   } else {
     RCLCPP_DEBUG(logger_, "Motor %d feedback timeout.", motor_id);
   }
+
 }
+} // namespace ddsm115_ros2_driver

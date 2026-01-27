@@ -3,9 +3,17 @@
 #include <boost/asio.hpp>
 #include <string>
 #include <vector>
-#include <rclcpp/rclcpp.hpp>
 #include <functional> 
 
+#include "rclcpp/rclcpp.hpp"
+
+namespace ddsm115_ros2_driver {
+enum class ControlLoopModes : uint8_t {
+  MODE_NONE = 0x00,
+  MODE_CURRENT = 0x01,
+  MODE_VELOCITY = 0x02,
+  MODE_POSITION = 0x03
+};
 class DDSM115DriverClient
 {
 public:
@@ -18,8 +26,12 @@ public:
   bool reinitialize_port();
   void close_port();
 
+  void send_mode_command(uint8_t motor_id, ControlLoopModes mode);
+
   // Motor control functions
-  void send_velocity_command(uint8_t motor_id, int16_t rpm, bool brake = false);
+  void send_current_command(uint8_t motor_id, double current);
+  void send_velocity_command(uint8_t motor_id, double rpm, bool brake = false);
+  void send_position_command(uint8_t motor_id, double position);
 
   // Helper functions
   void start_async_read();
@@ -35,17 +47,21 @@ private:
   rclcpp::Logger logger_;
 
   uint8_t calc_crc8_maxim(const std::vector<uint8_t> &data);
+  void send_rotate_command(std::vector<uint8_t> &command, uint8_t motor_id);
 
   std::vector<uint8_t> buffer_;
   std::array<uint8_t, 64> read_buf_;
   std::atomic<bool> reading_;
   std::thread io_thread_;
-  std::mutex mutex_;
-  std::condition_variable cv_;
+  std::mutex send_mutex_;
+  std::mutex wait_mutex_;
+  std::condition_variable wait_cv_;
+  std::promise<uint8_t> motor_id_promise_;
 
   std::chrono::steady_clock::time_point feedback_received_time_;
   std::atomic<uint8_t> last_motor_id_{0};
 
   std::function<void(const std::vector<uint8_t>&)> feedback_callback_;
 };
+} // namespace ddsm115_ros2_driver
 #endif // DDSM115_ROS2_DRIVER_DDSM115_ROS2_DRIVER_CLIENT_HPP_XP

@@ -3,3 +3,4 @@ ddsm115_node:
     serial_port: "/dev/ttyUSB0"
     baud_rate: 115200
     publish_rate: 10.0
+    motor_ids: [1, 2, 3, 4]

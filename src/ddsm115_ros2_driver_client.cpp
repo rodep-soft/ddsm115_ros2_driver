@@ -151,10 +151,11 @@ void DDSM115DriverClient::start_async_read() {
 void DDSM115DriverClient::parse_buffer() {
   // 10バイトパケット単位でチェック
   while (buffer_.size() >= 10) {
-    // パケット開始候補を探す(IDは1~4の範囲)
+    
     size_t pos = 0;
     bool found = false;
     for (; pos <= buffer_.size() - 10; ++pos) {
+      // 先頭バイト(id)が1～4の範囲かチェック
       if (buffer_[pos] >= 1 && buffer_[pos] <= 4) {
         // CRC8チェック
         std::vector<uint8_t> packet_data(buffer_.begin() + pos, buffer_.begin() + pos + 9);
@@ -206,7 +207,7 @@ void DDSM115DriverClient::process_feedback_packet(const std::vector<uint8_t>& pa
 }
 
 void DDSM115DriverClient::wait_for_feedback_response(uint8_t motor_id, int timeout_ms) {
-  std::unique_lock<std::mutex> lock(mutex_); // Condition Variableには unique_lock が必要
+  std::unique_lock<std::mutex> lock(mutex_); // Condition Variableには unique_lock が必要らしい
 
   // 述語（Predicate）付き wait_for:
   // 「タイムアウトした」 または 「last_motor_id_ が期待値になった」 まで待機する

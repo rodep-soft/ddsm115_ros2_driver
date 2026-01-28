@@ -22,7 +22,7 @@ public:
   // Destructor
   ~DDSM115DriverClient();
 
-  bool init_port(const std::string &port_name, int baud_rate);
+  bool init_port(const std::string &port_name);
   bool reinitialize_port();
   void close_port();
 

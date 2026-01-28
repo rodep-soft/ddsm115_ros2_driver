@@ -7,6 +7,8 @@
 #include <condition_variable>
 #include <future>
 
+constexpr uint32_t BAUD_RATE = 115200;
+
 namespace ddsm115_ros2_driver {
 
 uint8_t DDSM115DriverClient::calc_crc8_maxim(const std::vector<uint8_t>& data) {
@@ -55,10 +57,10 @@ void DDSM115DriverClient::close_port() {
   }
 }
 
-bool DDSM115DriverClient::init_port(const std::string& port_name, int baud_rate) {
+bool DDSM115DriverClient::init_port(const std::string& port_name) {
   try {
     this->port_name_ = port_name;
-    this->baud_rate_ = baud_rate;
+    this->baud_rate_ = BAUD_RATE;
     serial_port_.open(this->port_name_);
     serial_port_.set_option(boost::asio::serial_port_base::baud_rate(this->baud_rate_));
     serial_port_.set_option(boost::asio::serial_port_base::character_size(8));
@@ -98,7 +100,7 @@ bool DDSM115DriverClient::reinitialize_port() {
   // 少し待つ（デバイス側のリセット待ち）
   std::this_thread::sleep_for(std::chrono::milliseconds(100));
 
-  return init_port(port_name_, baud_rate_);
+  return init_port(port_name_);
 }
 
 void DDSM115DriverClient::send_mode_command(uint8_t motor_id, ControlLoopModes mode) {

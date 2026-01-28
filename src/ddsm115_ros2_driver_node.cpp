@@ -26,7 +26,6 @@ public:
 
     // Get parameters
     serial_port_ = this->get_parameter("serial_port").as_string();
-    baud_rate_ = this->get_parameter("baud_rate").as_int();
     double publish_rate = this->get_parameter("publish_rate").as_double();
     std::vector<int64_t> motor_ids = this->get_parameter("motor_ids").as_integer_array();
 
@@ -36,7 +35,7 @@ public:
       this->get_logger(),
       std::bind(&DDSM115DriverNode::motor_feedback_callback, this, std::placeholders::_1));
 
-    if (!driver_client_->init_port(serial_port_, baud_rate_)) {
+    if (!driver_client_->init_port(serial_port_)) {
       RCLCPP_ERROR(this->get_logger(), "Failed to initialize serial port");
       rclcpp::shutdown();
       return;
@@ -74,7 +73,6 @@ public:
     
     RCLCPP_INFO(this->get_logger(), "DDSM115 Driver Node initialized");
     RCLCPP_INFO(this->get_logger(), "Serial port: %s", serial_port_.c_str());
-    RCLCPP_INFO(this->get_logger(), "Baud rate: %d", baud_rate_);
   }
 
 private:
@@ -164,7 +162,6 @@ private:
   }
 
   std::string serial_port_;
-  int baud_rate_;
   
   std::map<int, rclcpp::Publisher<ddsm115_ros2_driver::msg::Ddsm115Status>::SharedPtr> status_pub_vec_;
   std::map<int, rclcpp::Subscription<ddsm115_ros2_driver::msg::Ddsm115Command>::SharedPtr> command_sub_vec_;

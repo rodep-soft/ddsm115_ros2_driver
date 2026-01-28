@@ -127,9 +127,12 @@ void DDSM115DriverClient::send_mode_command(uint8_t motor_id, ControlLoopModes m
     RCLCPP_ERROR(logger_, "Communication error with motor %d: %s", motor_id, e.what());
     reinitialize_port();
   }
+
+  RCLCPP_DEBUG(logger_, "Sent mode command to motor %d: mode %d", motor_id, static_cast<uint8_t>(mode));
+
 }
 
-void DDSM115DriverClient::send_current_command(uint8_t motor_id, double current) {
+bool DDSM115DriverClient::send_current_command(uint8_t motor_id, double current) {
   std::vector<uint8_t> data;
   data.reserve(10); 
 
@@ -144,11 +147,12 @@ void DDSM115DriverClient::send_current_command(uint8_t motor_id, double current)
   data.push_back(0x00);
   data.push_back(0x00);
   data.push_back(calc_crc8_maxim(data));
+  RCLCPP_DEBUG(logger_, "Current command for motor %d: current=%.2f, val_u16=%u", motor_id, current, val_u16);
 
-  send_rotate_command(data, motor_id);
+  return send_rotate_command(data, motor_id);
 }
 
-void DDSM115DriverClient::send_velocity_command(uint8_t motor_id, double rpm, bool brake) {
+bool DDSM115DriverClient::send_velocity_command(uint8_t motor_id, double rpm, bool brake) {
   std::vector<uint8_t> data;
   data.reserve(10); 
 
@@ -164,10 +168,12 @@ void DDSM115DriverClient::send_velocity_command(uint8_t motor_id, double rpm, bo
   data.push_back(0x00);
   data.push_back(calc_crc8_maxim(data));
 
-  send_rotate_command(data, motor_id);
+  RCLCPP_DEBUG(logger_, "Velocity command for motor %d: rpm=%.2f, val_u16=%u, brake=%d", motor_id, rpm, val_u16, brake ? 1 : 0);
+
+  return send_rotate_command(data, motor_id);
 }
 
-void DDSM115DriverClient::send_position_command(uint8_t motor_id, double position) {
+bool DDSM115DriverClient::send_position_command(uint8_t motor_id, double position) {
   std::vector<uint8_t> data;
   data.reserve(10); 
 
@@ -183,10 +189,13 @@ void DDSM115DriverClient::send_position_command(uint8_t motor_id, double positio
   data.push_back(0x00);
   data.push_back(calc_crc8_maxim(data));
 
-  send_rotate_command(data, motor_id);
+  RCLCPP_DEBUG(logger_, "Position command for motor %d: position=%.2f, val_u16=%u", motor_id, position, val_u16);
+
+  return send_rotate_command(data, motor_id);
 }
 
-void DDSM115DriverClient::send_rotate_command(std::vector<uint8_t>& data, uint8_t motor_id) {
+bool DDSM115DriverClient::send_rotate_command(std::vector<uint8_t>& data, uint8_t motor_id) {
+  bool result = false;
   try {
     std::lock_guard<std::mutex> lock(send_mutex_);
     last_motor_id_ = 0; 
@@ -194,12 +203,14 @@ void DDSM115DriverClient::send_rotate_command(std::vector<uint8_t>& data, uint8_
     boost::asio::write(serial_port_, boost::asio::buffer(data, data.size()));
 
     // フィードバック待ち（参考コードのアプローチ）
-    wait_for_feedback_response(motor_id, 20);
+    result = wait_for_feedback_response(motor_id, 20);
 
   } catch (const std::exception& e) {
     RCLCPP_ERROR(logger_, "Communication error with motor %d: %s", motor_id, e.what());
     reinitialize_port();
   }
+  RCLCPP_DEBUG(logger_, "Sent command to motor %d, mode %d", motor_id, data[1]);
+  return result;
 }
 void DDSM115DriverClient::start_async_read() {
   if (!reading_) return;
@@ -279,7 +290,7 @@ void DDSM115DriverClient::process_feedback_packet(const std::vector<uint8_t>& pa
   
 }
 
-void DDSM115DriverClient::wait_for_feedback_response(uint8_t motor_id, int timeout_ms) {
+bool DDSM115DriverClient::wait_for_feedback_response(uint8_t motor_id, int timeout_ms) {
 
   std::unique_lock<std::mutex> lock(wait_mutex_);
   bool result = wait_cv_.wait_for(lock, std::chrono::milliseconds(timeout_ms), [this, motor_id]() {
@@ -292,6 +303,6 @@ void DDSM115DriverClient::wait_for_feedback_response(uint8_t motor_id, int timeo
   } else {
     RCLCPP_DEBUG(logger_, "Motor %d feedback timeout.", motor_id);
   }
-
+  return result;
 }
 } // namespace ddsm115_ros2_driver

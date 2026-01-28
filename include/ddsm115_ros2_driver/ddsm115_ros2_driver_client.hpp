@@ -29,15 +29,15 @@ public:
   void send_mode_command(uint8_t motor_id, ControlLoopModes mode);
 
   // Motor control functions
-  void send_current_command(uint8_t motor_id, double current);
-  void send_velocity_command(uint8_t motor_id, double rpm, bool brake = false);
-  void send_position_command(uint8_t motor_id, double position);
+  bool send_current_command(uint8_t motor_id, double current);
+  bool send_velocity_command(uint8_t motor_id, double rpm, bool brake = false);
+  bool send_position_command(uint8_t motor_id, double position);
 
   // Helper functions
   void start_async_read();
   void parse_buffer();
   void process_feedback_packet(const std::vector<uint8_t> &packet);
-  void wait_for_feedback_response(uint8_t motor_id, int timeout_ms = 20);
+  bool wait_for_feedback_response(uint8_t motor_id, int timeout_ms = 20);
 
 private:
   std::string port_name_;
@@ -47,7 +47,7 @@ private:
   rclcpp::Logger logger_;
 
   uint8_t calc_crc8_maxim(const std::vector<uint8_t> &data);
-  void send_rotate_command(std::vector<uint8_t> &command, uint8_t motor_id);
+  bool send_rotate_command(std::vector<uint8_t> &command, uint8_t motor_id);
 
   std::vector<uint8_t> buffer_;
   std::array<uint8_t, 64> read_buf_;

@@ -20,7 +20,6 @@ public:
   {
     // Declare parameters
     this->declare_parameter<std::string>("serial_port", "/dev/ttyUSB0");
-    this->declare_parameter<int>("baud_rate", 115200);
     this->declare_parameter<double>("publish_rate", 10.0);
     this->declare_parameter<std::vector<int64_t>>("motor_ids", std::vector<int64_t>{1});
 

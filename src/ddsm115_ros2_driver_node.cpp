@@ -76,10 +76,32 @@ public:
 
   ~DDSM115DriverNode() override
   {
-    for(const auto& [motor_id, _] : command_sub_vec_) {
-      if(motor_modes_[motor_id] != ddsm115_ros2_driver::ControlLoopModes::MODE_POSITION)
-        driver_client_->send_current_command(static_cast<uint8_t>(motor_id), 0.0);  // Stop motor
+    // Stop timers first to prevent callbacks from running during destruction
+    if (subscription_timer_) {
+      subscription_timer_->cancel();
+      subscription_timer_.reset();
     }
+    if (command_timer_) {
+      command_timer_->cancel();
+      command_timer_.reset();
+    }
+    
+    // Clear subscriptions to stop receiving new messages
+    command_sub_vec_.clear();
+    status_pub_vec_.clear();
+    
+    // Stop all motors with proper synchronization
+    {
+      std::lock_guard<std::mutex> lock(mode_mutex_);
+      for (const auto& [motor_id, mode] : motor_modes_) {
+        if (mode != ddsm115_ros2_driver::ControlLoopModes::MODE_POSITION) {
+          if (driver_client_) {
+            driver_client_->send_current_command(static_cast<uint8_t>(motor_id), 0.0);  // Stop motor
+          }
+        }
+      }
+    }
+    
     if (driver_client_) {
       driver_client_->close_port();
     }

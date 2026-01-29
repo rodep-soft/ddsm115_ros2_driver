@@ -77,8 +77,14 @@ public:
   ~DDSM115DriverNode() override
   {
     // Stop timers first to prevent callbacks from running during destruction
-    subscription_timer_.reset();
-    command_timer_.reset();
+    if (subscription_timer_) {
+      subscription_timer_->cancel();
+      subscription_timer_.reset();
+    }
+    if (command_timer_) {
+      command_timer_->cancel();
+      command_timer_.reset();
+    }
     
     // Clear subscriptions to stop receiving new messages
     command_sub_vec_.clear();

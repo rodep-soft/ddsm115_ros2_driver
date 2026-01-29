@@ -74,6 +74,17 @@ public:
     RCLCPP_INFO(this->get_logger(), "Serial port: %s", serial_port_.c_str());
   }
 
+  ~DDSM115DriverNode() override
+  {
+    for(const auto& [motor_id, _] : command_sub_vec_) {
+      if(motor_modes_[motor_id] != ddsm115_ros2_driver::ControlLoopModes::MODE_POSITION)
+        driver_client_->send_current_command(static_cast<uint8_t>(motor_id), 0.0);  // Stop motor
+    }
+    if (driver_client_) {
+      driver_client_->close_port();
+    }
+  }
+
 private:
   void timer_send_command_callback()
   {

@@ -210,8 +210,8 @@ private:
       motor_modes_[motor_id] = static_cast<ddsm115_ros2_driver::ControlLoopModes>(packet[1]);
     }
     double current = static_cast<double>(static_cast<int16_t>((packet[2] << 8) | packet[3]) * (8.0 / 32767.0));
-    double velocity = static_cast<double>(static_cast<int16_t>((packet[4] << 8) | packet[5]) * (330.0 / 32767.0));
-    double position = static_cast<double>(static_cast<int16_t>((packet[6] << 8) | packet[7]) * (180.0 / 32767.0) + 180.0);
+    double velocity = static_cast<double>(static_cast<int16_t>((packet[4] << 8) | packet[5]));
+    double position = static_cast<double>(static_cast<uint16_t>((packet[6] << 8) | packet[7])) * (360.0 / 32767.0);
     uint8_t error_code = packet[8];
     status_msg->current = current;
     status_msg->velocity = velocity;

@@ -25,7 +25,7 @@ public:
     // Get parameters
     serial_port_ = this->get_parameter("serial_port").as_string();
     double publish_rate = this->get_parameter("publish_rate").as_double();
-    std::vector<int64_t> motor_ids = this->get_parameter("motor_ids").as_integer_array();
+    motor_ids_ = this->get_parameter("motor_ids").as_integer_array();
 
     // Initialize driver client
     driver_client_ = std::make_unique<ddsm115_ros2_driver::DDSM115DriverClient>(
@@ -39,7 +39,7 @@ public:
       return;
     }
 
-    for (int64_t motor_id : motor_ids)
+    for (int64_t motor_id : motor_ids_)
     {
       // Create publishers
       auto status_pub = this->create_publisher<ddsm115_ros2_driver::msg::Ddsm115Status>(
@@ -67,9 +67,10 @@ public:
         timer_period,
         std::bind(&DDSM115DriverNode::subscription_timer_callback, this));
 
-    // Create timer for send command handling
+    // Spread command writes across the full publish period.
+    const auto command_period = timer_period / (motor_ids_.empty() ? 1 : motor_ids_.size());
     command_timer_ = this->create_wall_timer(
-        timer_period,
+        command_period,
         std::bind(&DDSM115DriverNode::timer_send_command_callback, this));
 
     RCLCPP_INFO(this->get_logger(), "DDSM115 Driver Node initialized");
@@ -118,58 +119,61 @@ public:
 private:
   void timer_send_command_callback()
   {
-    if (!driver_client_)
+    if (!driver_client_ || motor_ids_.empty())
       return;
-    std::map<int, ddsm115_ros2_driver::msg::Ddsm115Command::SharedPtr> target_msgs;
+
+    const int motor_id = static_cast<int>(motor_ids_[next_command_index_]);
+    next_command_index_ = (next_command_index_ + 1) % motor_ids_.size();
+
+    ddsm115_ros2_driver::msg::Ddsm115Command::SharedPtr msg;
     {
       std::lock_guard<std::mutex> lock(command_mutex_);
-      target_msgs = received_msgs_;
+      auto it = received_msgs_.find(motor_id);
+      if (it != received_msgs_.end())
+      {
+        msg = it->second;
+      }
     }
-    for (const auto &[motor_id, msg] : target_msgs)
+
+    if (!msg)
+      return;
+
+    ddsm115_ros2_driver::ControlLoopModes motor_mode;
     {
-      if (!msg)
-        continue;
+      std::lock_guard<std::mutex> lock(mode_mutex_);
+      motor_mode = motor_modes_[motor_id];
+    }
 
-      ddsm115_ros2_driver::ControlLoopModes motor_mode;
+    auto send_mode = static_cast<ddsm115_ros2_driver::ControlLoopModes>(msg->mode);
+    if (motor_mode != send_mode)
+    {
+      driver_client_->send_mode_command(static_cast<uint8_t>(motor_id), send_mode);
+    }
 
-      {
-        std::lock_guard<std::mutex> lock(mode_mutex_);
-        motor_mode = motor_modes_[motor_id];
-      }
+    bool result = false;
+    switch (send_mode)
+    {
+    case ddsm115_ros2_driver::ControlLoopModes::MODE_CURRENT:
+      result = driver_client_->send_current_command(static_cast<uint8_t>(motor_id), msg->value);
+      break;
+    case ddsm115_ros2_driver::ControlLoopModes::MODE_VELOCITY:
+      result = driver_client_->send_velocity_command(static_cast<uint8_t>(motor_id), msg->value, msg->brake_mode == ddsm115_ros2_driver::msg::Ddsm115Command::BRAKE_LOCK);
+      break;
+    case ddsm115_ros2_driver::ControlLoopModes::MODE_POSITION:
+      result = driver_client_->send_position_command(static_cast<uint8_t>(motor_id), msg->value);
+      break;
+    default:
+      RCLCPP_WARN(this->get_logger(), "Unknown control mode for motor %d", motor_id);
+      break;
+    }
 
-      auto send_mode = static_cast<ddsm115_ros2_driver::ControlLoopModes>(msg->mode);
-      if (motor_mode != send_mode)
-      {
-        driver_client_->send_mode_command(static_cast<uint8_t>(motor_id), static_cast<ddsm115_ros2_driver::ControlLoopModes>(msg->mode));
-      }
-
-      bool result = false;
-      switch (send_mode)
-      {
-      case ddsm115_ros2_driver::ControlLoopModes::MODE_CURRENT:
-        result = driver_client_->send_current_command(static_cast<uint8_t>(motor_id), msg->value);
-        break;
-      case ddsm115_ros2_driver::ControlLoopModes::MODE_VELOCITY:
-        result = driver_client_->send_velocity_command(static_cast<uint8_t>(motor_id), msg->value, msg->brake_mode == ddsm115_ros2_driver::msg::Ddsm115Command::BRAKE_LOCK);
-        break;
-      case ddsm115_ros2_driver::ControlLoopModes::MODE_POSITION:
-        result = driver_client_->send_position_command(static_cast<uint8_t>(motor_id), msg->value);
-        break;
-      default:
-        RCLCPP_WARN(this->get_logger(), "Unknown control mode for motor %d", motor_id);
-        break;
-      }
-
-      if (result)
-      {
-        std::lock_guard<std::mutex> lock(command_mutex_);
-        // received_msgs_[motor_id] = nullptr; // Clear the command after sending
-        RCLCPP_DEBUG(this->get_logger(), "Sent command to motor %d", motor_id);
-      }
-      else
-      {
-        RCLCPP_WARN(this->get_logger(), "Failed to send command to motor %d", motor_id);
-      }
+    if (result)
+    {
+      RCLCPP_DEBUG(this->get_logger(), "Sent command to motor %d", motor_id);
+    }
+    else
+    {
+      RCLCPP_WARN(this->get_logger(), "Failed to send command to motor %d", motor_id);
     }
   }
 
@@ -195,6 +199,17 @@ private:
   {
     if (!driver_client_)
       return;
+
+    if (msg->mode == ddsm115_ros2_driver::msg::Ddsm115Command::MODE_VELOCITY)
+    {
+      RCLCPP_INFO(
+          this->get_logger(),
+          "Received velocity command: motor=%d rpm=%.1f brake_mode=%u",
+          motor_id,
+          msg->value,
+          msg->brake_mode);
+    }
+
     std::lock_guard<std::mutex> lock(command_mutex_);
     received_msgs_[motor_id] = msg;
   }
@@ -233,6 +248,8 @@ private:
   std::map<int, ddsm115_ros2_driver::ControlLoopModes> motor_modes_;
 
   std::map<int, ddsm115_ros2_driver::msg::Ddsm115Status::SharedPtr> status_msgs_;
+  std::vector<int64_t> motor_ids_;
+  std::size_t next_command_index_{0};
 
   std::unique_ptr<ddsm115_ros2_driver::DDSM115DriverClient> driver_client_;
 

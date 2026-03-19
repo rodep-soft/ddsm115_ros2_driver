@@ -14,4 +14,4 @@ uint8 brake_mode
 
 # MODE_CURRENT: value = 電流 (A) -8.0~8.0(A)
 # MODE_VELOCITY: value = 速度 (RPM) -330~330(RPM)
-# MODE_POSITION: value = 位置 (回転数) 0~360(°)
+# MODE_POSITION: value = 位置 (回転数) 0~360.0(°)

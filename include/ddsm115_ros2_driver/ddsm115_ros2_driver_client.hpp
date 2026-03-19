@@ -1,7 +1,11 @@
 #ifndef DDSM115_ROS2_DRIVER_DDSM115_ROS2_DRIVER_CLIENT_HPP_
 #define DDSM115_ROS2_DRIVER_DDSM115_ROS2_DRIVER_CLIENT_HPP_
+#include <array>
+#include <atomic>
 #include <boost/asio.hpp>
+#include <mutex>
 #include <string>
+#include <thread>
 #include <vector>
 #include <functional>
 
@@ -39,7 +43,6 @@ namespace ddsm115_ros2_driver
     void start_async_read();
     void parse_buffer();
     void process_feedback_packet(const std::vector<uint8_t> &packet);
-    bool wait_for_feedback_response(uint8_t motor_id, int timeout_ms = 20);
 
   private:
     std::string port_name_;
@@ -56,12 +59,6 @@ namespace ddsm115_ros2_driver
     std::atomic<bool> reading_;
     std::thread io_thread_;
     std::mutex send_mutex_;
-    std::mutex wait_mutex_;
-    std::condition_variable wait_cv_;
-    std::promise<uint8_t> motor_id_promise_;
-
-    std::chrono::steady_clock::time_point feedback_received_time_;
-    std::atomic<uint8_t> last_motor_id_{0};
 
     std::function<void(const std::vector<uint8_t> &)> feedback_callback_;
   };

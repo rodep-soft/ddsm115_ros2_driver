@@ -2,10 +2,8 @@
 
 #include <bit>
 #include <cmath>
-#include <thread>
 #include <mutex>
-#include <condition_variable>
-#include <future>
+#include <thread>
 
 constexpr uint32_t BAUD_RATE = 115200;
 
@@ -179,7 +177,7 @@ namespace ddsm115_ros2_driver
 
     data.push_back(motor_id);
     data.push_back(0x64);
-    uint16_t val_u16 = std::bit_cast<uint16_t>(static_cast<int16_t>(std::clamp(std::round(rpm * (32767.0 / 330.0)), -32767.0, 32767.0)));
+    uint16_t val_u16 = std::bit_cast<uint16_t>(static_cast<int16_t>(std::clamp(std::round(rpm), -330.0, 330.0)));
     data.push_back(static_cast<uint8_t>((val_u16 >> 8) & 0xFF));
     data.push_back(static_cast<uint8_t>(val_u16 & 0xFF));
     data.push_back(0x00);
@@ -188,8 +186,6 @@ namespace ddsm115_ros2_driver
     data.push_back(brake ? 0xFF : 0x00);
     data.push_back(0x00);
     data.push_back(calc_crc8_maxim(data));
-
-    RCLCPP_DEBUG(logger_, "Velocity command for motor %d: rpm=%.2f, val_u16=%u, brake=%d", motor_id, rpm, val_u16, brake ? 1 : 0);
 
     return send_rotate_command(data, motor_id);
   }
@@ -218,24 +214,19 @@ namespace ddsm115_ros2_driver
 
   bool DDSM115DriverClient::send_rotate_command(std::vector<uint8_t> &data, uint8_t motor_id)
   {
-    bool result = false;
     try
     {
       std::lock_guard<std::mutex> lock(send_mutex_);
-      last_motor_id_ = 0;
-      // コマンド送信
       boost::asio::write(serial_port_, boost::asio::buffer(data, data.size()));
-
-      // フィードバック待ち（参考コードのアプローチ）
-      result = wait_for_feedback_response(motor_id, 20);
+      RCLCPP_DEBUG(logger_, "Sent command to motor %d, mode %d", motor_id, data[1]);
+      return true;
     }
     catch (const std::exception &e)
     {
       RCLCPP_ERROR(logger_, "Communication error with motor %d: %s", motor_id, e.what());
       reinitialize_port();
+      return false;
     }
-    RCLCPP_DEBUG(logger_, "Sent command to motor %d, mode %d", motor_id, data[1]);
-    return result;
   }
   void DDSM115DriverClient::start_async_read()
   {
@@ -309,37 +300,10 @@ namespace ddsm115_ros2_driver
     // モーターIDと速度のみを出力
     RCLCPP_DEBUG(logger_, "Motor ID: %d, Velocity: %d", motor_id, velocity);
 
-    // フィードバック受信を記録
-    feedback_received_time_ = std::chrono::steady_clock::now();
-
-    std::unique_lock<std::mutex> lock(wait_mutex_);
-    last_motor_id_ = motor_id;
-    wait_cv_.notify_all();
-    lock.unlock();
-
     // コールバックが設定されていれば呼び出す
     if (feedback_callback_)
     {
       feedback_callback_(packet);
     }
-  }
-
-  bool DDSM115DriverClient::wait_for_feedback_response(uint8_t motor_id, int timeout_ms)
-  {
-
-    std::unique_lock<std::mutex> lock(wait_mutex_);
-    bool result = wait_cv_.wait_for(lock, std::chrono::milliseconds(timeout_ms), [this, motor_id]()
-                                    { return last_motor_id_ == motor_id; });
-    lock.unlock();
-
-    if (result)
-    {
-      RCLCPP_DEBUG(logger_, "Motor %d feedback received.", motor_id);
-    }
-    else
-    {
-      RCLCPP_DEBUG(logger_, "Motor %d feedback timeout.", motor_id);
-    }
-    return result;
   }
 } // namespace ddsm115_ros2_driver

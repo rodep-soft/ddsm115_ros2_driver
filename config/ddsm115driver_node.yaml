@@ -1,6 +1,6 @@
-ddsm115_node:
+ddsm115driver_node:
   ros__parameters:
     serial_port: "/dev/ttyUSB0"
     baud_rate: 115200
-    publish_rate: 10.0
+    publish_rate: 20.0
     motor_ids: [1, 2, 3, 4]

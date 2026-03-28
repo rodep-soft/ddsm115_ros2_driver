@@ -54,11 +54,11 @@ class MotorIdSetterNode(Node):
         super().__init__('set_motor_id_node')
         
         # ROS 2パラメータの宣言とデフォルト値の設定
-        self.declare_parameter('port', '/dev/ttyUSB0')
+        self.declare_parameter('serial_port', '/dev/ttyUSB0')
         self.declare_parameter('id', 1)
         
         # パラメータの取得
-        port = self.get_parameter('port').value
+        port = self.get_parameter('serial_port').value
         new_id = self.get_parameter('id').value
         
         # バリデーション

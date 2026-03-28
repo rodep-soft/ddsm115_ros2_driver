@@ -1,15 +1,14 @@
 #ifndef DDSM115_ROS2_DRIVER_DDSM115_ROS2_DRIVER_CLIENT_HPP_
 #define DDSM115_ROS2_DRIVER_DDSM115_ROS2_DRIVER_CLIENT_HPP_
+
 #include <array>
 #include <atomic>
 #include <boost/asio.hpp>
+#include <functional>
 #include <mutex>
 #include <string>
 #include <thread>
 #include <vector>
-#include <functional>
-
-#include "rclcpp/rclcpp.hpp"
 
 namespace ddsm115_ros2_driver
 {
@@ -20,11 +19,26 @@ namespace ddsm115_ros2_driver
     MODE_VELOCITY = 0x02,
     MODE_POSITION = 0x03
   };
+
+  enum class LogLevel
+  {
+    DEBUG,
+    INFO,
+    WARN,
+    ERROR
+  };
+
+  using LogCallback = std::function<void(LogLevel, const std::string &)>;
+  using FeedbackCallback = std::function<void(const std::vector<uint8_t> &)>;
+
   class DDSM115DriverClient
   {
   public:
     // Constructor
-    DDSM115DriverClient(rclcpp::Logger logger, std::function<void(const std::vector<uint8_t> &)> feedback_callback = nullptr);
+    DDSM115DriverClient(
+        FeedbackCallback feedback_callback = nullptr,
+        LogCallback log_callback = nullptr);
+
     // Destructor
     ~DDSM115DriverClient();
 
@@ -49,7 +63,6 @@ namespace ddsm115_ros2_driver
     int baud_rate_;
     boost::asio::io_context io_context_;
     boost::asio::serial_port serial_port_;
-    rclcpp::Logger logger_;
 
     uint8_t calc_crc8_maxim(const std::vector<uint8_t> &data);
     bool send_rotate_command(std::vector<uint8_t> &command, uint8_t motor_id);
@@ -60,7 +73,10 @@ namespace ddsm115_ros2_driver
     std::thread io_thread_;
     std::mutex send_mutex_;
 
-    std::function<void(const std::vector<uint8_t> &)> feedback_callback_;
+    FeedbackCallback feedback_callback_;
+    LogCallback log_callback_;
+
+    void log(LogLevel level, const std::string &message);
   };
 } // namespace ddsm115_ros2_driver
-#endif // DDSM115_ROS2_DRIVER_DDSM115_ROS2_DRIVER_CLIENT_HPP_XP
+#endif // DDSM115_ROS2_DRIVER_DDSM115_ROS2_DRIVER_CLIENT_HPP_

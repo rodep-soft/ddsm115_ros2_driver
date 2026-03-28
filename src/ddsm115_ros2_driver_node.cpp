@@ -29,8 +29,25 @@ public:
 
     // Initialize driver client
     driver_client_ = std::make_unique<ddsm115_ros2_driver::DDSM115DriverClient>(
-        this->get_logger(),
-        std::bind(&DDSM115DriverNode::motor_feedback_callback, this, std::placeholders::_1));
+        std::bind(&DDSM115DriverNode::motor_feedback_callback, this, std::placeholders::_1),
+        [this](ddsm115_ros2_driver::LogLevel level, const std::string &msg)
+        {
+          switch (level)
+          {
+          case ddsm115_ros2_driver::LogLevel::DEBUG:
+            RCLCPP_DEBUG(this->get_logger(), "%s", msg.c_str());
+            break;
+          case ddsm115_ros2_driver::LogLevel::INFO:
+            RCLCPP_INFO(this->get_logger(), "%s", msg.c_str());
+            break;
+          case ddsm115_ros2_driver::LogLevel::WARN:
+            RCLCPP_WARN(this->get_logger(), "%s", msg.c_str());
+            break;
+          case ddsm115_ros2_driver::LogLevel::ERROR:
+            RCLCPP_ERROR(this->get_logger(), "%s", msg.c_str());
+            break;
+          }
+        });
 
     if (!driver_client_->init_port(serial_port_))
     {

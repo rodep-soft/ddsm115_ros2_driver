@@ -4,6 +4,8 @@
 #include <cmath>
 #include <mutex>
 #include <thread>
+#include <iostream>
+#include <sstream>
 
 constexpr uint32_t BAUD_RATE = 115200;
 
@@ -37,12 +39,41 @@ namespace ddsm115_ros2_driver
     return crc;
   }
 
-  DDSM115DriverClient::DDSM115DriverClient(rclcpp::Logger logger, std::function<void(const std::vector<uint8_t> &)> feedback_callback)
-      : serial_port_(io_context_), logger_(logger), buffer_(), reading_(false), feedback_callback_(feedback_callback) {}
+  DDSM115DriverClient::DDSM115DriverClient(FeedbackCallback feedback_callback, LogCallback log_callback)
+      : serial_port_(io_context_), buffer_(), reading_(false), feedback_callback_(feedback_callback), log_callback_(log_callback) {}
 
   DDSM115DriverClient::~DDSM115DriverClient()
   {
     close_port();
+  }
+
+  void DDSM115DriverClient::log(LogLevel level, const std::string &message)
+  {
+    if (log_callback_)
+    {
+      log_callback_(level, message);
+    }
+    else
+    {
+      // Default logging to stderr if no callback is provided
+      std::string level_str;
+      switch (level)
+      {
+      case LogLevel::DEBUG:
+        level_str = "[DEBUG]";
+        break;
+      case LogLevel::INFO:
+        level_str = "[INFO]";
+        break;
+      case LogLevel::WARN:
+        level_str = "[WARN]";
+        break;
+      case LogLevel::ERROR:
+        level_str = "[ERROR]";
+        break;
+      }
+      std::cerr << level_str << " " << message << std::endl;
+    }
   }
 
   void DDSM115DriverClient::close_port()
@@ -99,7 +130,9 @@ namespace ddsm115_ros2_driver
     }
     catch (const std::exception &e)
     {
-      RCLCPP_ERROR(logger_, "Failed to open serial port %s: %s", port_name.c_str(), e.what());
+      std::stringstream ss;
+      ss << "Failed to open serial port " << port_name << ": " << e.what();
+      log(LogLevel::ERROR, ss.str());
       return false;
     }
     return true;
@@ -107,7 +140,7 @@ namespace ddsm115_ros2_driver
 
   bool DDSM115DriverClient::reinitialize_port()
   {
-    RCLCPP_WARN(logger_, "Attempting to reinitialize serial port %s", port_name_.c_str());
+    log(LogLevel::WARN, "Attempting to reinitialize serial port " + port_name_);
 
     // 一度閉じてから再オープン
     close_port();
@@ -142,11 +175,15 @@ namespace ddsm115_ros2_driver
     }
     catch (const std::exception &e)
     {
-      RCLCPP_ERROR(logger_, "Communication error with motor %d: %s", motor_id, e.what());
+      std::stringstream ss;
+      ss << "Communication error with motor " << static_cast<int>(motor_id) << ": " << e.what();
+      log(LogLevel::ERROR, ss.str());
       reinitialize_port();
     }
 
-    RCLCPP_DEBUG(logger_, "Sent mode command to motor %d: mode %d", motor_id, static_cast<uint8_t>(mode));
+    std::stringstream ss;
+    ss << "Sent mode command to motor " << static_cast<int>(motor_id) << ": mode " << static_cast<int>(mode);
+    log(LogLevel::DEBUG, ss.str());
   }
 
   bool DDSM115DriverClient::send_current_command(uint8_t motor_id, double current)
@@ -165,7 +202,10 @@ namespace ddsm115_ros2_driver
     data.push_back(0x00);
     data.push_back(0x00);
     data.push_back(calc_crc8_maxim(data));
-    RCLCPP_DEBUG(logger_, "Current command for motor %d: current=%.2f, val_u16=%u", motor_id, current, val_u16);
+    
+    std::stringstream ss;
+    ss << "Current command for motor " << static_cast<int>(motor_id) << ": current=" << current << ", val_u16=" << val_u16;
+    log(LogLevel::DEBUG, ss.str());
 
     return send_rotate_command(data, motor_id);
   }
@@ -207,7 +247,9 @@ namespace ddsm115_ros2_driver
     data.push_back(0x00);
     data.push_back(calc_crc8_maxim(data));
 
-    RCLCPP_DEBUG(logger_, "Position command for motor %d: position=%.2f, val_u16=%u", motor_id, position, val_u16);
+    std::stringstream ss;
+    ss << "Position command for motor " << static_cast<int>(motor_id) << ": position=" << position << ", val_u16=" << val_u16;
+    log(LogLevel::DEBUG, ss.str());
 
     return send_rotate_command(data, motor_id);
   }
@@ -218,12 +260,16 @@ namespace ddsm115_ros2_driver
     {
       std::lock_guard<std::mutex> lock(send_mutex_);
       boost::asio::write(serial_port_, boost::asio::buffer(data, data.size()));
-      RCLCPP_DEBUG(logger_, "Sent command to motor %d, mode %d", motor_id, data[1]);
+      std::stringstream ss;
+      ss << "Sent command to motor " << static_cast<int>(motor_id) << ", mode " << static_cast<int>(data[1]);
+      log(LogLevel::DEBUG, ss.str());
       return true;
     }
     catch (const std::exception &e)
     {
-      RCLCPP_ERROR(logger_, "Communication error with motor %d: %s", motor_id, e.what());
+      std::stringstream ss;
+      ss << "Communication error with motor " << static_cast<int>(motor_id) << ": " << e.what();
+      log(LogLevel::ERROR, ss.str());
       reinitialize_port();
       return false;
     }
@@ -241,7 +287,9 @@ namespace ddsm115_ros2_driver
             parse_buffer(); // ロック内でパースする
           }
         } else if (ec != boost::asio::error::operation_aborted) {
-            RCLCPP_DEBUG(logger_, "Read error: %s", ec.message().c_str());
+            std::stringstream ss;
+            ss << "Read error: " << ec.message();
+            log(LogLevel::DEBUG, ss.str());
         }
         if (reading_) start_async_read(); });
   }
@@ -298,7 +346,9 @@ namespace ddsm115_ros2_driver
     int16_t velocity = (static_cast<int16_t>(packet[4]) << 8) | packet[5];
 
     // モーターIDと速度のみを出力
-    RCLCPP_DEBUG(logger_, "Motor ID: %d, Velocity: %d", motor_id, velocity);
+    std::stringstream ss;
+    ss << "Motor ID: " << static_cast<int>(motor_id) << ", Velocity: " << velocity;
+    log(LogLevel::DEBUG, ss.str());
 
     // コールバックが設定されていれば呼び出す
     if (feedback_callback_)

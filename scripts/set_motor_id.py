@@ -5,10 +5,28 @@ import time
 import rclpy
 from rclpy.node import Node
 
+
+def calculate_crc8(data):
+    """
+    CRC-8/MAXIM (Polynomial: 0x31 / x8 + x5 + x4 + 1)
+    """
+    crc = 0x00
+    for byte in data:
+        crc ^= byte
+        for _ in range(8):
+            if crc & 0x80:
+                crc = (crc << 1) ^ 0x31
+            else:
+                crc <<= 1
+            crc &= 0xFF
+    return crc
+
+
 def set_motor_id(port, new_id, logger=None):
     try:
         ser = serial.Serial(port, 115200, timeout=0.5)
         command = bytearray([0xAA, 0x55, 0x53, new_id, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00])
+        command[9] = calculate_crc8(command[:9])
         
         msg = f"[{port}] IDを {new_id} に設定中..."
         if logger: logger.info(msg)
